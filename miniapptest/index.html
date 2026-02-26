@@ -1,0 +1,2317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ブロック積み上げゲーム</title>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, doc, setDoc, getDocs, query, orderBy, limit, where, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDqbYmWgj-fUmBCXwjFknZezU95mw3RqAg",
+            authDomain: "blockdropgame.firebaseapp.com",
+            projectId: "blockdropgame",
+            storageBucket: "blockdropgame.firebasestorage.app",
+            messagingSenderId: "122462331554",
+            appId: "1:122462331554:web:ae88873e8954513c70edfb"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // グローバルに公開
+        window.firebaseDB = db;
+        window.firebaseModules = { collection, doc, setDoc, getDocs, query, orderBy, limit, where, deleteDoc };
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Zen Maru Gothic', 'Hiragino Sans', 'Meiryo', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100dvh;
+            touch-action: none;
+        }
+
+        #gameContainer {
+            width: 100%;
+            max-width: 420px;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            overflow: hidden;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            font-size: 20px;
+            padding: 10px 0 6px;
+            flex-shrink: 0;
+        }
+
+        /* ===== メニュー画面 ===== */
+        #menuScreen, #gameScreen {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        #menuScreen.active, #gameScreen.active {
+            display: flex;
+        }
+
+        .difficulty-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 30px 20px;
+        }
+
+        .btn {
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            width: 100%;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn-easy   { background: linear-gradient(135deg, #84fab0, #8fd3f4); }
+        .btn-normal { background: linear-gradient(135deg, #ffecd2, #fcb69f); }
+        .btn-hard   { background: linear-gradient(135deg, #ff9a9e, #fecfef); }
+        .btn-back   {
+            background: linear-gradient(135deg, #a1c4fd, #c2e9fb);
+            margin: 0 12px 12px;
+            flex-shrink: 0;
+        }
+
+        .btn-share {
+            background: linear-gradient(135deg, #f857a6, #ff5858);
+            margin-bottom: 10px;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(248,87,166,0.5); }
+            70%  { box-shadow: 0 0 0 10px rgba(248,87,166,0); }
+            100% { box-shadow: 0 0 0 0 rgba(248,87,166,0); }
+        }
+
+        #gameOverScreen h2 {
+            font-size: 22px;
+            color: #764ba2;
+        }
+
+        .info-text {
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+        }
+
+        /* ===== ゲーム画面 ===== */
+        #gameInfo {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 16px;
+            font-size: 15px;
+            font-weight: bold;
+            color: #333;
+            flex-shrink: 0;
+        }
+
+        #canvasWrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background: linear-gradient(45deg, #ffe4f0 25%, transparent 25%, transparent 75%, #ffe4f0 75%, #ffe4f0),
+                        linear-gradient(45deg, #ffe4f0 25%, transparent 25%, transparent 75%, #ffe4f0 75%, #ffe4f0);
+            background-size: 16px 16px;
+            background-position: 0 0, 8px 8px;
+            background-color: #fff;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            max-height: 100%;
+            max-width: 100%;
+            object-fit: contain;
+        }
+
+        /* ===== コントロール ===== */
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            padding: 6px 10px;
+            flex-shrink: 0;
+            background: linear-gradient(180deg, #fff0fa 0%, #f5eeff 100%);
+        }
+
+        .control-btn {
+            padding: 0;
+            height: 44px;
+            font-size: 20px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: manipulation;
+            position: relative;
+            overflow: hidden;
+            /* うるちゅるベース */
+            background: linear-gradient(160deg, #e8b4f8 0%, #c084fc 50%, #a855f7 100%);
+            box-shadow:
+                0 6px 0 #7e22ce,
+                0 8px 16px rgba(168,85,247,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+            transition: all 0.1s ease;
+        }
+
+        /* ぷっくり光沢レイヤー */
+        .control-btn::before {
+            content: '';
+            position: absolute;
+            top: 5px;
+            left: 10%;
+            width: 80%;
+            height: 38%;
+            background: linear-gradient(180deg,
+                rgba(255,255,255,0.75) 0%,
+                rgba(255,255,255,0.2) 100%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        /* キラキラ小粒 */
+        .control-btn::after {
+            content: '✦';
+            position: absolute;
+            top: 6px;
+            right: 10px;
+            font-size: 9px;
+            color: rgba(255,255,255,0.85);
+            pointer-events: none;
+        }
+
+        .control-btn:active {
+            transform: translateY(4px);
+            box-shadow:
+                0 2px 0 #7e22ce,
+                0 4px 8px rgba(168,85,247,0.35),
+                inset 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        /* 左ボタン：ピンク系 */
+        #btnLeft {
+            background: linear-gradient(160deg, #ffb3d9 0%, #f472b6 50%, #ec4899 100%);
+            box-shadow:
+                0 6px 0 #be185d,
+                0 8px 16px rgba(236,72,153,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+        }
+        #btnLeft:active {
+            box-shadow: 0 2px 0 #be185d, 0 4px 8px rgba(236,72,153,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        /* 回転ボタン：ミント系 */
+        #btnRotate {
+            background: linear-gradient(160deg, #99f6e4 0%, #2dd4bf 50%, #14b8a6 100%);
+            box-shadow:
+                0 6px 0 #0f766e,
+                0 8px 16px rgba(20,184,166,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+        }
+        #btnRotate:active {
+            box-shadow: 0 2px 0 #0f766e, 0 4px 8px rgba(20,184,166,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        /* 右ボタン：スカイブルー系 */
+        #btnRight {
+            background: linear-gradient(160deg, #bae6fd 0%, #38bdf8 50%, #0ea5e9 100%);
+            box-shadow:
+                0 6px 0 #0369a1,
+                0 8px 16px rgba(14,165,233,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+        }
+        #btnRight:active {
+            box-shadow: 0 2px 0 #0369a1, 0 4px 8px rgba(14,165,233,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        /* ドロップボタン：ピーチオレンジ系・横長 */
+        #btnDrop {
+            grid-column: 1 / 4;
+            height: 38px;
+            font-size: 15px;
+            letter-spacing: 2px;
+            background: linear-gradient(160deg, #fed7aa 0%, #fb923c 50%, #f97316 100%);
+            box-shadow:
+                0 6px 0 #c2410c,
+                0 8px 16px rgba(249,115,22,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+            border-radius: 18px;
+        }
+        #btnDrop:active {
+            box-shadow: 0 2px 0 #c2410c, 0 4px 8px rgba(249,115,22,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        /* ===== ゲームオーバー ===== */
+        #gameOverScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(102,126,234,0.35);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #gameOverScreen.active { display: flex; }
+
+        #gameOverInner {
+            background: white;
+            border-radius: 24px;
+            padding: 24px 20px 20px;
+            text-align: center;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+            width: 86%;
+            max-width: 320px;
+        }
+
+        #gameOverInner h2 {
+            font-size: 22px;
+            color: #764ba2;
+            margin-bottom: 4px;
+        }
+
+        #finalScore {
+            font-size: 44px;
+            color: #667eea;
+            font-weight: bold;
+            margin: 10px 0 4px;
+        }
+
+        /* ベストスコアボード */
+        #bestScoreBoard {
+            background: linear-gradient(135deg, #fff0fa, #f0eaff);
+            border: 2px solid #e9b8f5;
+            border-radius: 16px;
+            padding: 10px 16px;
+            margin: 0 16px 6px;
+            flex-shrink: 0;
+        }
+
+        #bestScoreBoard h3 {
+            font-size: 12px;
+            color: #a855f7;
+            margin-bottom: 6px;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .best-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #555;
+            padding: 2px 0;
+        }
+
+        .best-row .diff-label { font-weight: bold; }
+        .best-row .best-val   { color: #9333ea; font-weight: bold; font-size: 14px; }
+
+        /* ===== ライフシステム ===== */
+        #lifeDisplay {
+            background: linear-gradient(135deg, #fce7ff, #ffe0f7);
+            border: 2px solid #f9a8d4;
+            border-radius: 16px;
+            padding: 8px 16px;
+            margin: 0 16px 6px;
+            flex-shrink: 0;
+        }
+
+        #lifeHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        #lifeHeader h3 {
+            font-size: 11px;
+            color: #ec4899;
+            letter-spacing: 1px;
+        }
+
+        #lifeCount {
+            font-size: 15px;
+        }
+
+        #lifeHearts {
+            display: flex;
+            gap: 3px;
+            justify-content: center;
+            margin-bottom: 3px;
+        }
+
+        .heart {
+            font-size: 16px;
+            filter: grayscale(0);
+            transition: all 0.2s;
+        }
+
+        .heart.empty {
+            filter: grayscale(1);
+            opacity: 0.3;
+        }
+
+        #lifeTimer {
+            font-size: 10px;
+            color: #aaa;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        #heartButtons {
+            display: flex;
+            gap: 6px;
+        }
+
+        .heart-btn {
+            flex: 1;
+            padding: 5px;
+            font-size: 11px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Zen Maru Gothic', sans-serif;
+            transition: all 0.2s;
+        }
+
+        .heart-btn.send {
+            background: linear-gradient(135deg, #f9a8d4, #ec4899);
+            color: white;
+        }
+
+        .heart-btn.request {
+            background: linear-gradient(135deg, #ddd6fe, #a855f7);
+            color: white;
+        }
+
+        .heart-btn:active {
+            transform: scale(0.95);
+        }
+
+        .heart-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ===== トップページ ===== */
+        #menuScreen {
+            background: linear-gradient(160deg, #ffe0f7 0%, #ede0ff 50%, #dceeff 100%);
+            overflow: hidden;
+        }
+
+        /* タイトルエリア */
+        #titleArea {
+            text-align: center;
+            padding: 18px 16px 0;
+            flex-shrink: 0;
+        }
+
+        #titleSub {
+            font-size: 12px;
+            color: #c084fc;
+            letter-spacing: 3px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        #titleMain {
+            font-size: 32px;
+            font-weight: 900;
+            line-height: 1.1;
+            background: linear-gradient(135deg, #f857a6 0%, #a855f7 50%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 2px 6px rgba(168,85,247,0.25));
+        }
+
+        #titleDeco {
+            font-size: 13px;
+            color: #f9a8d4;
+            margin-top: 2px;
+            letter-spacing: 2px;
+        }
+
+        /* キャラクターキャンバス */
+        #charaArea {
+            flex-shrink: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 140px;
+            overflow: hidden;
+        }
+
+        #charaCanvas {
+            width: 100%;
+            height: 140px;
+        }
+
+        /* 難易度ボタンエリア */
+        #menuBottom {
+            flex-shrink: 0;
+            padding: 0 16px 10px;
+        }
+
+        .difficulty-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .btn-easy {
+            background: linear-gradient(135deg, #fbcfe8, #f9a8d4, #ec4899);
+            box-shadow: 0 4px 0 #be185d, 0 6px 12px rgba(236,72,153,0.3),
+                        inset 0 1px 0 rgba(255,255,255,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-normal {
+            background: linear-gradient(135deg, #ddd6fe, #c4b5fd, #a855f7);
+            box-shadow: 0 4px 0 #7e22ce, 0 6px 12px rgba(168,85,247,0.3),
+                        inset 0 1px 0 rgba(255,255,255,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-hard {
+            background: linear-gradient(135deg, #bae6fd, #7dd3fc, #0ea5e9);
+            box-shadow: 0 4px 0 #0369a1, 0 6px 12px rgba(14,165,233,0.3),
+                        inset 0 1px 0 rgba(255,255,255,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-easy::before, .btn-normal::before, .btn-hard::before {
+            content: '';
+            position: absolute;
+            top: 4px; left: 10%;
+            width: 80%; height: 35%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 100%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .btn-easy:active   { transform: translateY(4px); box-shadow: 0 1px 0 #be185d, 0 2px 6px rgba(236,72,153,0.2); }
+        .btn-normal:active { transform: translateY(4px); box-shadow: 0 1px 0 #7e22ce, 0 2px 6px rgba(168,85,247,0.2); }
+        .btn-hard:active   { transform: translateY(4px); box-shadow: 0 1px 0 #0369a1, 0 2px 6px rgba(14,165,233,0.2); }
+
+        .info-text {
+            text-align: center;
+            color: #c084fc;
+            font-size: 12px;
+        }
+
+        /* NEW RECORD アニメ */
+        #newRecord {
+            display: none;
+            font-size: 18px;
+            font-weight: bold;
+            color: #f857a6;
+            margin: 4px 0 8px;
+            animation: recordPop 0.5s ease;
+        }
+
+        #newRecord.show { display: block; }
+
+        @keyframes recordPop {
+            0%   { transform: scale(0.5); opacity: 0; }
+            70%  { transform: scale(1.2); }
+            100% { transform: scale(1);   opacity: 1; }
+        }
+
+        /* ===== ランキング ===== */
+        #rankingScreen {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+            background: linear-gradient(160deg, #ffe0f7 0%, #ede0ff 50%, #dceeff 100%);
+        }
+
+        #rankingScreen.active { display: flex; }
+
+        #rankingHeader {
+            padding: 16px 16px 8px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        #rankingHeader h2 {
+            font-size: 22px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #f857a6, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        #rankingTabs {
+            display: flex;
+            gap: 6px;
+            padding: 0 16px 8px;
+            flex-shrink: 0;
+        }
+
+        .rank-tab {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: 'Zen Maru Gothic', sans-serif;
+            cursor: pointer;
+            background: rgba(255,255,255,0.5);
+            color: #a855f7;
+            transition: all 0.2s;
+        }
+
+        .rank-tab.active {
+            background: linear-gradient(135deg, #f857a6, #a855f7);
+            color: white;
+            box-shadow: 0 3px 10px rgba(168,85,247,0.35);
+        }
+
+        #rankingList {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 16px;
+        }
+
+        .rank-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255,255,255,0.8);
+            border-radius: 14px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(168,85,247,0.1);
+        }
+
+        .rank-item.me {
+            background: linear-gradient(135deg, #fce7ff, #ede9fe);
+            border: 2px solid #c084fc;
+        }
+
+        .rank-num {
+            font-size: 18px;
+            font-weight: 900;
+            width: 28px;
+            text-align: center;
+            color: #c084fc;
+            flex-shrink: 0;
+        }
+
+        .rank-num.gold   { color: #f59e0b; }
+        .rank-num.silver { color: #94a3b8; }
+        .rank-num.bronze { color: #cd7c2f; }
+
+        .rank-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f9a8d4, #c084fc);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .rank-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .rank-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .rank-name {
+            font-size: 13px;
+            font-weight: bold;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .rank-diff {
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        .rank-score {
+            font-size: 16px;
+            font-weight: 900;
+            color: #a855f7;
+            flex-shrink: 0;
+        }
+
+        .rank-empty {
+            text-align: center;
+            color: #c084fc;
+            font-size: 14px;
+            padding: 40px 0;
+        }
+
+        #rankingFooter {
+            padding: 10px 16px;
+            flex-shrink: 0;
+        }
+
+        /* ===== ライフ送信画面 ===== */
+        #sendHeartScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(160deg, #ffe0f7, #ede0ff);
+            z-index: 300;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #sendHeartScreen.active { display: flex; }
+
+        #sendHeartCard {
+            background: white;
+            border-radius: 24px;
+            padding: 32px 24px;
+            text-align: center;
+            box-shadow: 0 16px 48px rgba(168,85,247,0.2);
+            max-width: 320px;
+            width: 100%;
+        }
+
+        #sendHeartCard .icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        #sendHeartCard h2 {
+            font-size: 20px;
+            color: #a855f7;
+            margin-bottom: 8px;
+        }
+
+        #sendHeartCard .requester {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #sendHeartCard .message {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        
+        <!-- メニュー画面 -->
+        <div id="menuScreen" class="active">
+
+            <!-- タイトル -->
+            <div id="titleArea">
+                <div id="titleSub">✦ PUZZLE GAME ✦</div>
+                <div id="titleMain">ブロック🍬ドロップ</div>
+                <div id="titleDeco">🌸 つめてあそぼ！ 🌸</div>
+            </div>
+
+            <!-- ライフ表示 -->
+            <div id="lifeDisplay">
+                <div id="lifeHeader">
+                    <h3>💗 LIFE</h3>
+                    <span id="lifeCount">5/5</span>
+                </div>
+                <div id="lifeHearts">
+                    <span class="heart">💗</span>
+                    <span class="heart">💗</span>
+                    <span class="heart">💗</span>
+                    <span class="heart">💗</span>
+                    <span class="heart">💗</span>
+                </div>
+                <div id="lifeTimer">次の回復まで 30:00</div>
+                <div id="heartButtons">
+                    <button class="heart-btn request" style="width:100%;" onclick="requestHeart()">🙏 ライフをおねだり</button>
+                </div>
+            </div>
+
+            <!-- ベストスコアボード -->
+            <div id="bestScoreBoard">
+                <h3>🏆 MY BEST SCORE</h3>
+                <div class="best-row">
+                    <span class="diff-label">🌸 かんたん</span>
+                    <span class="best-val" id="bestEasy">---</span>
+                </div>
+                <div class="best-row">
+                    <span class="diff-label">💜 ふつう</span>
+                    <span class="best-val" id="bestNormal">---</span>
+                </div>
+                <div class="best-row">
+                    <span class="diff-label">🩵 むずかしい</span>
+                    <span class="best-val" id="bestHard">---</span>
+                </div>
+            </div>
+
+            <!-- 難易度ボタン -->
+            <div id="menuBottom">
+                <div class="difficulty-buttons">
+                    <button class="btn btn-easy"   onclick="startGame('easy')">🌸 かんたん</button>
+                    <button class="btn btn-normal" onclick="startGame('normal')">💜 ふつう</button>
+                    <button class="btn btn-hard"   onclick="startGame('hard')">🩵 むずかしい</button>
+                </div>
+                <button class="btn" style="background:linear-gradient(135deg,#f857a6,#a855f7);box-shadow:0 4px 0 #7e22ce,0 6px 12px rgba(168,85,247,0.3);margin-bottom:6px;" onclick="showRanking()">🏆 ランキングを見る</button>
+                <p class="info-text">✦ 難易度を選んでスタート ✦</p>
+            </div>
+        </div>
+
+        <!-- ランキング画面 -->
+        <div id="rankingScreen">
+            <div id="rankingHeader">
+                <h2>🏆 みんなのランキング</h2>
+            </div>
+            <div id="rankingTabs">
+                <button class="rank-tab active" onclick="switchRankTab('easy')">🌸 かんたん</button>
+                <button class="rank-tab" onclick="switchRankTab('normal')">💜 ふつう</button>
+                <button class="rank-tab" onclick="switchRankTab('hard')">🩵 むずかしい</button>
+            </div>
+            <div id="rankingList">
+                <div class="rank-empty">読み込み中...🍬</div>
+            </div>
+            <div id="rankingFooter">
+                <button class="btn btn-back" style="margin:0;" onclick="hideRanking()">← 戻る</button>
+            </div>
+        </div>
+
+        <!-- ライフ送信画面 -->
+        <div id="sendHeartScreen">
+            <div id="sendHeartCard">
+                <div class="icon">🙏💗</div>
+                <h2>ライフのおねだりが届いています</h2>
+                <div class="requester" id="requesterName">---</div>
+                <div class="message">ライフを送ってあげますか？<br>あなたのライフは減りません！</div>
+                <button class="btn" style="background:linear-gradient(135deg,#f9a8d4,#ec4899);box-shadow:0 4px 0 #be185d;width:100%;margin-bottom:10px;" onclick="confirmSendHeart()">💗 ライフを送る</button>
+                <button class="btn btn-back" style="margin:0;width:100%;" onclick="closeSendHeartScreen()">キャンセル</button>
+            </div>
+        </div>
+
+        <!-- ゲーム画面 -->
+        <div id="gameScreen">
+            <div id="gameInfo">
+                <span>スコア: <span id="score">0</span></span>
+                <span>レベル: <span id="level">1</span></span>
+            </div>
+            
+            <div id="canvasWrapper">
+                <canvas id="gameCanvas" width="288" height="576"></canvas>
+                <div id="gameOverScreen">
+                  <div id="gameOverInner">
+                    <h2>ゲームオーバー！</h2>
+                    <div id="newRecord" class="">🎉 NEW RECORD！</div>
+                    <div id="finalScore">0</div>
+<div id="bestScoreInfo" style="font-size:13px;color:#aaa;margin-bottom:12px;"></div>
+                    <canvas id="shareCanvas" width="600" height="600" style="display:none;"></canvas>
+                    <button class="btn btn-share" onclick="shareScore()">💌 友だちにシェア</button>
+                    <button class="btn btn-back" style="margin:8px 0 0;" onclick="backToMenu()">メニューに戻る</button>
+                  </div>
+                </div>
+            </div>
+
+            <div id="controls">
+                <button class="control-btn" id="btnLeft">◀</button>
+                <button class="control-btn" id="btnRotate"><span style="font-size:14px;line-height:1.2;text-align:center;">↻<br>回転</span></button>
+                <button class="control-btn" id="btnRight">▶</button>
+                <button class="control-btn" id="btnDrop">⬇ ドロップ</button>
+            </div>
+
+            <button class="btn btn-back" onclick="backToMenu()">メニューに戻る</button>
+        </div>
+    </div>
+
+    <script>
+        // LIFF初期化
+        const LIFF_ID = '2009112650-8b86xfqG';
+        let liffReady = false;
+
+        window.addEventListener('load', () => {
+            initLifeSystem();
+            loadBestScores();
+            if (typeof liff !== 'undefined') {
+                liff.init({ liffId: LIFF_ID })
+                    .then(async () => {
+                        liffReady = true;
+                        console.log('LIFF初期化成功');
+                        await getLiffProfile();
+                        await checkHeartAction();
+                        await checkReceivedHearts();
+                    })
+                    .catch((err) => console.log('LIFF初期化エラー:', err));
+            }
+        });
+
+        // ===== トップページ キャラクター＋ブロックイラスト描画 =====
+        function drawTopCharacter() {
+            const cc = document.getElementById('charaCanvas');
+            if (!cc) return;
+            const cx = cc.getContext('2d');
+            const W = cc.width, H = cc.height;
+            cx.clearRect(0, 0, W, H);
+
+            // ---- 右側：ミニテトリスボード ----
+            const boardX = 215, boardY = 10;
+            const bs = 18; // ブロックサイズ
+            const bCols = 6, bRows = 11;
+
+            // ボード背景
+            cx.fillStyle = 'rgba(255,255,255,0.55)';
+            roundRectPath(cx, boardX - 4, boardY - 4, bCols * bs + 8, bRows * bs + 8, 10);
+            cx.fill();
+            cx.strokeStyle = 'rgba(192,132,252,0.5)';
+            cx.lineWidth = 2;
+            roundRectPath(cx, boardX - 4, boardY - 4, bCols * bs + 8, bRows * bs + 8, 10);
+            cx.stroke();
+
+            // 積まれたブロックのレイアウト（0=空, 色文字=ブロック）
+            const P = '#ffb3d9', B = '#bae6fd', M = '#99f6e4', Y = '#fde68a', V = '#ddd6fe', O = '#fed7aa';
+            const layout = [
+                [0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+                [0, 0, B, B, 0, 0],  // 落下中ピース（T字）
+                [0, 0, 0, B, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+                [0, P, 0, 0, M, 0],
+                [0, P, V, V, M, 0],
+                [Y, P, V, O, M, Y],
+                [Y, Y, V, O, O, Y],
+                [P, Y, B, O, M, M],
+            ];
+
+            layout.forEach((row, ry) => {
+                row.forEach((cell, rx) => {
+                    if (cell) {
+                        drawJellyBlock(cx, boardX + rx * bs, boardY + ry * bs, bs, cell);
+                    } else {
+                        // グリッド線
+                        cx.strokeStyle = 'rgba(200,180,255,0.2)';
+                        cx.lineWidth = 0.5;
+                        cx.strokeRect(boardX + rx * bs, boardY + ry * bs, bs, bs);
+                    }
+                });
+            });
+
+            // 落下中ピースの点線ガイド
+            cx.setLineDash([2, 2]);
+            cx.strokeStyle = 'rgba(192,132,252,0.4)';
+            cx.lineWidth = 1;
+            cx.beginPath();
+            cx.moveTo(boardX + 2 * bs, boardY + 4 * bs);
+            cx.lineTo(boardX + 2 * bs, boardY + 5 * bs + 10);
+            cx.moveTo(boardX + 4 * bs, boardY + 4 * bs);
+            cx.lineTo(boardX + 4 * bs, boardY + 5 * bs + 10);
+            cx.stroke();
+            cx.setLineDash([]);
+
+            // NEXT表示
+            cx.fillStyle = '#a855f7';
+            cx.font = 'bold 9px "Zen Maru Gothic", sans-serif';
+            cx.textAlign = 'left';
+            cx.fillText('NEXT', boardX + bCols * bs + 12, boardY + 16);
+            drawJellyBlock(cx, boardX + bCols * bs + 10, boardY + 22, 14, '#ffb3d9');
+            drawJellyBlock(cx, boardX + bCols * bs + 24, boardY + 22, 14, '#ffb3d9');
+            drawJellyBlock(cx, boardX + bCols * bs + 10, boardY + 36, 14, '#ffb3d9');
+
+            // ---- 左側：キャラクター ----
+            const cx0 = 90, cy0 = 115;
+
+            // 影
+            cx.fillStyle = 'rgba(168,85,247,0.12)';
+            cx.beginPath();
+            cx.ellipse(cx0, cy0 + 60, 36, 9, 0, 0, Math.PI * 2);
+            cx.fill();
+
+            // 体
+            const bodyGrad = cx.createRadialGradient(cx0 - 16, cy0 - 16, 4, cx0, cy0, 50);
+            bodyGrad.addColorStop(0,   '#fce7ff');
+            bodyGrad.addColorStop(0.4, '#e9b4f8');
+            bodyGrad.addColorStop(1,   '#a855f7');
+            cx.beginPath();
+            cx.arc(cx0, cy0, 48, 0, Math.PI * 2);
+            cx.fillStyle = bodyGrad;
+            cx.fill();
+
+            // 体の光沢
+            const shineGrad = cx.createRadialGradient(cx0 - 14, cy0 - 18, 0, cx0 - 8, cy0 - 8, 32);
+            shineGrad.addColorStop(0,   'rgba(255,255,255,0.72)');
+            shineGrad.addColorStop(0.6, 'rgba(255,255,255,0.22)');
+            shineGrad.addColorStop(1,   'rgba(255,255,255,0)');
+            cx.beginPath();
+            cx.arc(cx0, cy0, 48, 0, Math.PI * 2);
+            cx.fillStyle = shineGrad;
+            cx.fill();
+
+            // 頬っぺた
+            [[cx0 - 24, 8], [cx0 + 24, 8]].forEach(([bx, by]) => {
+                cx.beginPath();
+                cx.ellipse(bx, cy0 + by, 11, 7, 0, 0, Math.PI * 2);
+                cx.fillStyle = 'rgba(255,150,190,0.42)';
+                cx.fill();
+            });
+
+            // 目（左）
+            cx.beginPath();
+            cx.ellipse(cx0 - 15, cy0 - 4, 6, 8, 0, 0, Math.PI * 2);
+            cx.fillStyle = '#5b21b6';
+            cx.fill();
+            cx.beginPath();
+            cx.ellipse(cx0 - 13, cy0 - 7, 2.5, 2.5, 0, 0, Math.PI * 2);
+            cx.fillStyle = 'white';
+            cx.fill();
+
+            // 目（右）
+            cx.beginPath();
+            cx.ellipse(cx0 + 15, cy0 - 4, 6, 8, 0, 0, Math.PI * 2);
+            cx.fillStyle = '#5b21b6';
+            cx.fill();
+            cx.beginPath();
+            cx.ellipse(cx0 + 17, cy0 - 7, 2.5, 2.5, 0, 0, Math.PI * 2);
+            cx.fillStyle = 'white';
+            cx.fill();
+
+            // 口
+            cx.beginPath();
+            cx.arc(cx0, cy0 + 15, 12, 0.15 * Math.PI, 0.85 * Math.PI);
+            cx.strokeStyle = '#7e22ce';
+            cx.lineWidth = 2.5;
+            cx.lineCap = 'round';
+            cx.stroke();
+
+            // リボン
+            cx.save();
+            cx.translate(cx0 + 28, cy0 - 40);
+            cx.rotate(0.3);
+            [[-1, 1], [1, 1]].forEach(([dx]) => {
+                cx.beginPath();
+                cx.moveTo(0, 0);
+                cx.bezierCurveTo(dx * 16, -12, dx * 20, 2, 0, 0);
+                cx.fillStyle = '#f472b6';
+                cx.fill();
+            });
+            cx.beginPath();
+            cx.arc(0, 0, 4.5, 0, Math.PI * 2);
+            cx.fillStyle = '#fce7ff';
+            cx.fill();
+            cx.restore();
+
+            // キャラがブロックを差し出す腕
+            cx.save();
+            cx.translate(cx0 + 46, cy0 + 15);
+            cx.rotate(-0.4);
+            drawJellyBlock(cx, 0, -13, 24, '#bae6fd');
+            cx.restore();
+
+            // 吹き出し「つんでね！」
+            const bx = cx0 + 55, by2 = cy0 - 55;
+            cx.fillStyle = 'white';
+            cx.strokeStyle = '#f9a8d4';
+            cx.lineWidth = 2;
+            // 吹き出し本体
+            roundRectPath(cx, bx, by2, 88, 30, 10);
+            cx.fill();
+            cx.stroke();
+            // しっぽ
+            cx.beginPath();
+            cx.moveTo(bx + 6, by2 + 28);
+            cx.lineTo(bx - 8, by2 + 42);
+            cx.lineTo(bx + 18, by2 + 28);
+            cx.fillStyle = 'white';
+            cx.fill();
+            cx.strokeStyle = '#f9a8d4';
+            cx.lineWidth = 2;
+            cx.stroke();
+            cx.textAlign = 'center';
+            cx.fillStyle = '#ec4899';
+            cx.font = 'bold 13px "Zen Maru Gothic", sans-serif';
+            cx.fillText('つんでね！🍬', bx + 44, by2 + 20);
+
+            // 浮かぶデコブロック（背景）
+            [
+                {x: 12,  y: 14,  s: 20, c: '#fde68a', a: -18},
+                {x: 170, y: 8,   s: 16, c: '#99f6e4', a:  10},
+                {x: 10,  y: 175, s: 18, c: '#ddd6fe', a:  14},
+                {x: 185, y: 180, s: 14, c: '#fed7aa', a: -12},
+            ].forEach(b => {
+                cx.save();
+                cx.translate(b.x + b.s/2, b.y + b.s/2);
+                cx.rotate(b.a * Math.PI / 180);
+                drawJellyBlock(cx, -b.s/2, -b.s/2, b.s, b.c);
+                cx.restore();
+            });
+
+            // キラキラ
+            [[30, 65], [165, 40], [25, 130], [190, 145]].forEach(([x, y]) => {
+                cx.save();
+                cx.translate(x, y);
+                cx.fillStyle = 'rgba(248,87,166,0.55)';
+                for (let i = 0; i < 4; i++) {
+                    cx.rotate(Math.PI / 4);
+                    cx.beginPath();
+                    cx.ellipse(0, 0, 6, 1.8, 0, 0, Math.PI * 2);
+                    cx.fill();
+                }
+                cx.restore();
+            });
+        }
+
+        // ゼリーブロック描画（キャラ用）
+        function drawJellyBlock(cx, x, y, size, color) {
+            const r = size * 0.28;
+            const rgb = hexToRgb(color);
+
+            // 影
+            cx.fillStyle = `rgba(${rgb.r*0.6},${rgb.g*0.6},${rgb.b*0.6},0.2)`;
+            jellyRoundRect(cx, x+2, y+3, size, size, r);
+            cx.fill();
+
+            // メイン
+            const g = cx.createRadialGradient(x+size*0.3, y+size*0.3, 0, x+size*0.5, y+size*0.5, size);
+            g.addColorStop(0, `rgba(${rgb.r},${rgb.g},${rgb.b},0.9)`);
+            g.addColorStop(1, `rgba(${rgb.r*0.7},${rgb.g*0.7},${rgb.b*0.7},0.9)`);
+            cx.fillStyle = g;
+            jellyRoundRect(cx, x, y, size, size, r);
+            cx.fill();
+
+            // 光沢
+            const sg = cx.createRadialGradient(x+size*0.3, y+size*0.25, 0, x+size*0.3, y+size*0.25, size*0.5);
+            sg.addColorStop(0, 'rgba(255,255,255,0.7)');
+            sg.addColorStop(1, 'rgba(255,255,255,0)');
+            cx.fillStyle = sg;
+            cx.beginPath();
+            cx.ellipse(x+size*0.3, y+size*0.28, size*0.3, size*0.2, 0, 0, Math.PI*2);
+            cx.fill();
+        }
+
+        function jellyRoundRect(cx, x, y, w, h, r) {
+            cx.beginPath();
+            cx.moveTo(x+r, y);
+            cx.lineTo(x+w-r, y);
+            cx.quadraticCurveTo(x+w, y, x+w, y+r);
+            cx.lineTo(x+w, y+h-r);
+            cx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+            cx.lineTo(x+r, y+h);
+            cx.quadraticCurveTo(x, y+h, x, y+h-r);
+            cx.lineTo(x, y+r);
+            cx.quadraticCurveTo(x, y, x+r, y);
+            cx.closePath();
+        }
+        const BEST_KEY = 'blockgame_best';
+
+        function loadBestScores() {
+            const data = getBestData();
+            const fmt = v => v > 0 ? v.toLocaleString() + ' pt' : '---';
+            document.getElementById('bestEasy').textContent   = fmt(data.easy);
+            document.getElementById('bestNormal').textContent = fmt(data.normal);
+            document.getElementById('bestHard').textContent   = fmt(data.hard);
+        }
+
+        function getBestData() {
+            try {
+                return JSON.parse(localStorage.getItem(BEST_KEY)) || { easy:0, normal:0, hard:0 };
+            } catch(e) {
+                return { easy:0, normal:0, hard:0 };
+            }
+        }
+
+        function saveBestScore(diff, newScore) {
+            const data = getBestData();
+            const isNew = newScore > (data[diff] || 0);
+            if (isNew) {
+                data[diff] = newScore;
+                localStorage.setItem(BEST_KEY, JSON.stringify(data));
+            }
+            return isNew;
+        }
+
+        // ゲーム設定
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const BLOCK_SIZE = 36;
+        const COLS = 8;
+        const ROWS = 16;
+
+        let board = [];
+        let currentPiece = null;
+        let score = 0;
+        let level = 1;
+        let gameInterval = null;
+        let difficulty = 'normal';
+        let moveInterval = null;
+
+        // テトリミノの形状
+        const PIECES = [
+            [[1,1,1,1]], // I
+            [[1,1],[1,1]], // O
+            [[0,1,0],[1,1,1]], // T
+            [[1,0,0],[1,1,1]], // L
+            [[0,0,1],[1,1,1]], // J
+            [[0,1,1],[1,1,0]], // S
+            [[1,1,0],[0,1,1]]  // Z
+        ];
+
+        const COLORS = [
+            '#FF6B9D', // ピンク
+            '#FEC368', // オレンジ
+            '#A8E6CF', // ミントグリーン
+            '#FFD93D', // イエロー
+            '#95E1D3', // ターコイズ
+            '#C7CEEA', // ラベンダー
+            '#FFDFD3'  // ピーチ
+        ];
+
+        // ゲーム開始
+        function startGame(diff) {
+            // ライフチェック
+            if (currentLives <= 0) {
+                alert('ライフがありません😢\nハートをおねだりするか、回復を待ってね！');
+                return;
+            }
+
+            // ライフ消費
+            consumeLife();
+
+            difficulty = diff;
+            score = 0;
+            level = 1;
+            
+            // 難易度による速度設定
+            let speed;
+            switch(diff) {
+                case 'easy': speed = 800; break;
+                case 'normal': speed = 600; break;
+                case 'hard': speed = 400; break;
+            }
+
+            initBoard();
+            document.getElementById('menuScreen').classList.remove('active');
+            document.getElementById('gameScreen').classList.add('active');
+            document.getElementById('gameOverScreen').classList.remove('active');
+            
+            spawnPiece();
+            updateScore();
+            
+            if (gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(moveDown, speed);
+        }
+
+        // ボード初期化
+        function initBoard() {
+            board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+        }
+
+        // 新しいピース生成
+        function spawnPiece() {
+            const index = Math.floor(Math.random() * PIECES.length);
+            currentPiece = {
+                shape: PIECES[index],
+                color: COLORS[index],
+                x: Math.floor(COLS / 2) - 1,
+                y: 0
+            };
+
+            if (checkCollision()) {
+                gameOver();
+            }
+        }
+
+        // 描画
+        function draw() {
+            // 白背景でうるうる感を出す
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // ボード描画（可愛いブロック）
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (board[y][x]) {
+                        drawCuteBlock(x * BLOCK_SIZE, y * BLOCK_SIZE, board[y][x]);
+                    }
+                }
+            }
+
+            // 現在のピース描画
+            if (currentPiece) {
+                for (let y = 0; y < currentPiece.shape.length; y++) {
+                    for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                        if (currentPiece.shape[y][x]) {
+                            drawCuteBlock(
+                                (currentPiece.x + x) * BLOCK_SIZE,
+                                (currentPiece.y + y) * BLOCK_SIZE,
+                                currentPiece.color
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // 可愛いブロックを描画
+        function drawCuteBlock(x, y, color) {
+            const padding = 2;
+            const size = BLOCK_SIZE - padding * 2;
+            const radius = 8;
+
+            // 影（ぷっくり感）
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            roundRect(ctx, x + padding + 1, y + padding + 2, size, size, radius);
+            ctx.fill();
+
+            // メインブロック（半透明でうるうる）
+            const mainGradient = ctx.createRadialGradient(
+                x + padding + size * 0.3, 
+                y + padding + size * 0.3, 
+                0,
+                x + padding + size * 0.5, 
+                y + padding + size * 0.5, 
+                size
+            );
+            
+            // 半透明カラーに変換
+            const alpha = 0.85;
+            const rgb = hexToRgb(color);
+            mainGradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`);
+            mainGradient.addColorStop(0.7, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`);
+            mainGradient.addColorStop(1, `rgba(${rgb.r * 0.7}, ${rgb.g * 0.7}, ${rgb.b * 0.7}, ${alpha})`);
+            
+            ctx.fillStyle = mainGradient;
+            roundRect(ctx, x + padding, y + padding, size, size, radius);
+            ctx.fill();
+
+            // うるうるハイライト（大きめ）
+            const highlightGradient = ctx.createRadialGradient(
+                x + padding + size * 0.3,
+                y + padding + size * 0.25,
+                0,
+                x + padding + size * 0.3,
+                y + padding + size * 0.25,
+                size * 0.5
+            );
+            highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+            highlightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)');
+            highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = highlightGradient;
+            ctx.beginPath();
+            ctx.ellipse(
+                x + padding + size * 0.3,
+                y + padding + size * 0.25,
+                size * 0.35,
+                size * 0.25,
+                0, 0, Math.PI * 2
+            );
+            ctx.fill();
+
+            // 小さいキラキラハイライト
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.beginPath();
+            ctx.arc(x + padding + size * 0.7, y + padding + size * 0.3, size * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ぷっくり光沢の縁
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 2;
+            roundRect(ctx, x + padding + 1, y + padding + 1, size - 2, size - 2, radius - 1);
+            ctx.stroke();
+
+            // 外側の縁（ちゅるん感）
+            const edgeGradient = ctx.createLinearGradient(
+                x + padding, y + padding,
+                x + padding, y + padding + size
+            );
+            edgeGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            edgeGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+            edgeGradient.addColorStop(1, shadeColor(color, -30));
+            
+            ctx.strokeStyle = edgeGradient;
+            ctx.lineWidth = 1;
+            roundRect(ctx, x + padding, y + padding, size, size, radius);
+            ctx.stroke();
+        }
+
+        // HEXをRGBに変換
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 255, g: 192, g: 203 };
+        }
+
+        // 角丸四角形を描画
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+
+        // 色を明るく/暗くする
+        function shadeColor(color, percent) {
+            const num = parseInt(color.replace("#",""), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 +
+                (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255))
+                .toString(16).slice(1);
+        }
+
+        // 衝突判定
+        function checkCollision(offsetX = 0, offsetY = 0, shape = currentPiece.shape) {
+            for (let y = 0; y < shape.length; y++) {
+                for (let x = 0; x < shape[y].length; x++) {
+                    if (shape[y][x]) {
+                        const newX = currentPiece.x + x + offsetX;
+                        const newY = currentPiece.y + y + offsetY;
+                        
+                        if (newX < 0 || newX >= COLS || newY >= ROWS) {
+                            return true;
+                        }
+                        if (newY >= 0 && board[newY][newX]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // ピース固定
+        function lockPiece() {
+            for (let y = 0; y < currentPiece.shape.length; y++) {
+                for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                    if (currentPiece.shape[y][x]) {
+                        const boardY = currentPiece.y + y;
+                        const boardX = currentPiece.x + x;
+                        if (boardY >= 0) {
+                            board[boardY][boardX] = currentPiece.color;
+                        }
+                    }
+                }
+            }
+            clearLines();
+            spawnPiece();
+        }
+
+        // ライン消去
+        function clearLines() {
+            let linesCleared = 0;
+            for (let y = ROWS - 1; y >= 0; y--) {
+                if (board[y].every(cell => cell !== 0)) {
+                    board.splice(y, 1);
+                    board.unshift(Array(COLS).fill(0));
+                    linesCleared++;
+                    y++;
+                }
+            }
+            if (linesCleared > 0) {
+                score += linesCleared * 100 * level;
+                level = Math.floor(score / 1000) + 1;
+                updateScore();
+            }
+        }
+
+        // 移動・回転
+        function moveDown() {
+            if (!checkCollision(0, 1)) {
+                currentPiece.y++;
+            } else {
+                lockPiece();
+            }
+            draw();
+        }
+
+        function moveLeft() {
+            if (!currentPiece) return;
+            if (!checkCollision(-1, 0)) {
+                currentPiece.x--;
+                draw();
+            }
+        }
+
+        function moveRight() {
+            if (!currentPiece) return;
+            if (!checkCollision(1, 0)) {
+                currentPiece.x++;
+                draw();
+            }
+        }
+
+        function stopMove() {
+            if (moveInterval) {
+                clearInterval(moveInterval);
+                moveInterval = null;
+            }
+        }
+
+        function rotateBlock() {
+            const rotated = currentPiece.shape[0].map((_, i) =>
+                currentPiece.shape.map(row => row[i]).reverse()
+            );
+            
+            if (!checkCollision(0, 0, rotated)) {
+                currentPiece.shape = rotated;
+                draw();
+            }
+        }
+
+        function dropBlock() {
+            while (!checkCollision(0, 1)) {
+                currentPiece.y++;
+            }
+            lockPiece();
+            draw();
+        }
+
+        // スコア更新
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('level').textContent = level;
+        }
+
+        // ゲームオーバー
+        function gameOver() {
+            clearInterval(gameInterval);
+            document.getElementById('finalScore').textContent = score.toLocaleString() + ' pt';
+
+            const isNew = saveBestScore(difficulty, score);
+            const data  = getBestData();
+            const newRecordEl = document.getElementById('newRecord');
+            const bestInfoEl  = document.getElementById('bestScoreInfo');
+
+            if (isNew) {
+                newRecordEl.classList.add('show');
+                bestInfoEl.textContent = '🏆 自己最高記録更新！';
+                bestInfoEl.style.color = '#f857a6';
+            } else {
+                newRecordEl.classList.remove('show');
+                const best = data[difficulty] || 0;
+                bestInfoEl.textContent = `自己ベスト: ${best.toLocaleString()} pt`;
+                bestInfoEl.style.color = '#aaa';
+            }
+
+            // グローバルランキングに登録
+            submitToRanking(difficulty, score);
+
+            document.getElementById('gameOverScreen').classList.add('active');
+        }
+
+        // ===== ライフシステム =====
+        const MAX_LIVES = 5;
+        const RECOVERY_TIME = 30 * 60 * 1000; // 30分
+        const LIFE_KEY = 'blockdrop_lives';
+        let currentLives = MAX_LIVES;
+        let nextRecoveryTime = null;
+        let lifeTimerInterval = null;
+
+        function initLifeSystem() {
+            loadLives();
+            updateLifeDisplay();
+            startLifeTimer();
+        }
+
+        function loadLives() {
+            try {
+                const data = JSON.parse(localStorage.getItem(LIFE_KEY));
+                if (data) {
+                    currentLives = data.lives || MAX_LIVES;
+                    nextRecoveryTime = data.nextRecovery || null;
+                    
+                    // 回復チェック
+                    const now = Date.now();
+                    if (currentLives < MAX_LIVES && nextRecoveryTime) {
+                        while (now >= nextRecoveryTime && currentLives < MAX_LIVES) {
+                            currentLives++;
+                            nextRecoveryTime += RECOVERY_TIME;
+                        }
+                        if (currentLives >= MAX_LIVES) {
+                            nextRecoveryTime = null;
+                        }
+                        saveLives();
+                    }
+                }
+            } catch(e) {
+                currentLives = MAX_LIVES;
+                nextRecoveryTime = null;
+            }
+        }
+
+        function saveLives() {
+            localStorage.setItem(LIFE_KEY, JSON.stringify({
+                lives: currentLives,
+                nextRecovery: nextRecoveryTime
+            }));
+        }
+
+        function consumeLife() {
+            if (currentLives <= 0) return false;
+            currentLives--;
+            if (currentLives < MAX_LIVES && !nextRecoveryTime) {
+                nextRecoveryTime = Date.now() + RECOVERY_TIME;
+            }
+            saveLives();
+            updateLifeDisplay();
+            return true;
+        }
+
+        function addLife() {
+            if (currentLives >= MAX_LIVES) return;
+            currentLives++;
+            if (currentLives >= MAX_LIVES) {
+                nextRecoveryTime = null;
+            }
+            saveLives();
+            updateLifeDisplay();
+        }
+
+        function updateLifeDisplay() {
+            document.getElementById('lifeCount').textContent = `${currentLives}/${MAX_LIVES}`;
+            
+            const hearts = document.querySelectorAll('.heart');
+            hearts.forEach((heart, i) => {
+                heart.classList.toggle('empty', i >= currentLives);
+            });
+
+            // おねだりボタンの有効/無効
+            const requestBtn = document.querySelector('.heart-btn.request');
+            if (requestBtn) {
+                requestBtn.disabled = currentLives > 0;
+            }
+        }
+
+        function startLifeTimer() {
+            if (lifeTimerInterval) clearInterval(lifeTimerInterval);
+            
+            lifeTimerInterval = setInterval(() => {
+                if (currentLives >= MAX_LIVES) {
+                    document.getElementById('lifeTimer').textContent = 'MAX';
+                    return;
+                }
+
+                if (!nextRecoveryTime) {
+                    document.getElementById('lifeTimer').textContent = '';
+                    return;
+                }
+
+                const now = Date.now();
+                const remaining = nextRecoveryTime - now;
+
+                if (remaining <= 0) {
+                    // 回復処理
+                    currentLives++;
+                    if (currentLives < MAX_LIVES) {
+                        nextRecoveryTime = now + RECOVERY_TIME;
+                    } else {
+                        nextRecoveryTime = null;
+                    }
+                    saveLives();
+                    updateLifeDisplay();
+                } else {
+                    const mins = Math.floor(remaining / 60000);
+                    const secs = Math.floor((remaining % 60000) / 1000);
+                    document.getElementById('lifeTimer').textContent = 
+                        `次の回復まで ${mins}:${secs.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+
+        // ===== ハート送受信機能（おねだりのみ） =====
+        let pendingHeartRequest = null;
+
+        async function requestHeart() {
+            if (!liffReady || !liff.isInClient()) {
+                alert('LINEアプリ内でのみ利用可能です');
+                return;
+            }
+
+            if (currentLives > 0) {
+                alert('ライフが0の時におねだりできます');
+                return;
+            }
+
+            // ユーザー情報確認
+            if (!myUserId || !myDisplayName) {
+                alert('ユーザー情報が取得できていません');
+                return;
+            }
+
+            const textMessage = {
+                type: 'text',
+                text: `🙏 ライフのおねだり 🙏\n\n${myDisplayName}さんがライフを求めています💜\n\nあなたのライフは減りません！\n下のリンクからライフを送ってあげてね✨\n\nhttps://liff.line.me/${LIFF_ID}?action=sendHeartTo&requester=${myUserId}&name=${encodeURIComponent(myDisplayName)}`
+            };
+
+            try {
+                const result = await liff.shareTargetPicker([textMessage]);
+                if (result) {
+                    alert('おねだりを送信しました！');
+                }
+            } catch(e) {
+                console.log('おねだりエラー:', e);
+                alert(`エラー: ${e.message || e}`);
+            }
+        }
+
+        function closeSendHeartScreen() {
+            document.getElementById('sendHeartScreen').classList.remove('active');
+            pendingHeartRequest = null;
+        }
+
+        async function confirmSendHeart() {
+            if (!pendingHeartRequest) return;
+
+            const { requester } = pendingHeartRequest;
+
+            // Firebaseにハート送信記録
+            if (window.firebaseDB) {
+                try {
+                    const { collection, doc, setDoc } = window.firebaseModules;
+                    const heartDoc = doc(window.firebaseDB, 'hearts', `${requester}_${Date.now()}`);
+                    await setDoc(heartDoc, {
+                        to: requester,
+                        from: myUserId,
+                        fromName: myDisplayName,
+                        sentAt: Date.now()
+                    });
+
+                    // フレンド登録（双方向）
+                    await registerFriend(requester);
+                    
+                    alert('💗 ライフを送りました！');
+                    closeSendHeartScreen();
+                } catch(e) {
+                    console.log('ハート送信エラー:', e);
+                    alert('送信に失敗しました😢');
+                }
+            }
+        }
+
+        // フレンド登録
+        async function registerFriend(friendUserId) {
+            if (!myUserId || !window.firebaseDB) return;
+            try {
+                const { collection, doc, setDoc } = window.firebaseModules;
+                
+                // 自分→友だち
+                const myFriendDoc = doc(window.firebaseDB, 'friends', `${myUserId}_${friendUserId}`);
+                await setDoc(myFriendDoc, {
+                    userId: myUserId,
+                    friendId: friendUserId,
+                    createdAt: Date.now()
+                });
+
+                // 友だち→自分
+                const friendMyDoc = doc(window.firebaseDB, 'friends', `${friendUserId}_${myUserId}`);
+                await setDoc(friendMyDoc, {
+                    userId: friendUserId,
+                    friendId: myUserId,
+                    createdAt: Date.now()
+                });
+            } catch(e) {
+                console.log('フレンド登録エラー:', e);
+            }
+        }
+
+        // URLパラメータでハート受け取り・送信画面表示・シェア受信処理
+        async function checkHeartAction() {
+            const params = new URLSearchParams(window.location.search);
+            const action = params.get('action');
+            
+            console.log('checkHeartAction:', { action, myUserId, params: params.toString() });
+            
+            if (action === 'sendHeartTo') {
+                const requester = params.get('requester');
+                const requesterName = decodeURIComponent(params.get('name') || 'フレンド');
+                
+                pendingHeartRequest = { requester, requesterName };
+                document.getElementById('requesterName').textContent = requesterName + 'さん';
+                document.getElementById('sendHeartScreen').classList.add('active');
+                
+                // URLクリーン
+                window.history.replaceState({}, '', window.location.pathname);
+            } else if (action === 'shareReceived') {
+                const fromUserId = params.get('from');
+                console.log('シェア受信:', { fromUserId, myUserId });
+                if (fromUserId && myUserId && fromUserId !== myUserId) {
+                    // シェアを受け取ったのでフレンド登録
+                    console.log('フレンド登録実行:', fromUserId);
+                    await registerFriend(fromUserId);
+                    alert(`フレンド登録しました！\nランキングに表示されます✨`);
+                } else {
+                    console.log('フレンド登録スキップ:', { fromUserId, myUserId, same: fromUserId === myUserId });
+                }
+                // URLクリーン
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+        }
+
+        // 受信したハートをチェックして自動付与
+        async function checkReceivedHearts() {
+            if (!myUserId || !window.firebaseDB) return;
+
+            try {
+                const { collection, getDocs, query, where, deleteDoc, doc } = window.firebaseModules;
+                const q = query(collection(window.firebaseDB, 'hearts'), where('to', '==', myUserId));
+                const snapshot = await getDocs(q);
+                
+                let heartCount = 0;
+                const deletePromises = [];
+                
+                snapshot.forEach(docSnap => {
+                    heartCount++;
+                    deletePromises.push(deleteDoc(doc(window.firebaseDB, 'hearts', docSnap.id)));
+                });
+
+                if (heartCount > 0) {
+                    // 受け取ったハート分ライフ追加
+                    for (let i = 0; i < heartCount; i++) {
+                        addLife();
+                    }
+                    await Promise.all(deletePromises);
+                    alert(`💗 ${heartCount}個のライフを受け取りました！`);
+                }
+            } catch(e) {
+                console.log('ハート受信チェックエラー:', e);
+            }
+        }
+        let currentRankTab = 'easy';
+        let myUserId = null;
+        let myDisplayName = 'あなた';
+        let myPictureUrl = null;
+
+        // LIFFからユーザー情報取得
+        async function getLiffProfile() {
+            if (typeof liff === 'undefined' || !liffReady) return;
+            try {
+                const profile = await liff.getProfile();
+                myUserId      = profile.userId;
+                myDisplayName = profile.displayName;
+                myPictureUrl  = profile.pictureUrl || null;
+            } catch(e) {
+                console.log('プロフィール取得エラー:', e);
+            }
+        }
+
+        // スコアをFirebaseランキングに登録
+        async function submitToRanking(diff, newScore) {
+            if (!myUserId || !window.firebaseDB) return;
+            try {
+                const { collection, doc, setDoc } = window.firebaseModules;
+                const docRef = doc(window.firebaseDB, 'rankings', `${diff}_${myUserId}`);
+                
+                await setDoc(docRef, {
+                    userId: myUserId,
+                    name: myDisplayName,
+                    picture: myPictureUrl,
+                    score: newScore,
+                    difficulty: diff,
+                    updatedAt: Date.now()
+                }, { merge: true });
+                
+                console.log('ランキング登録成功');
+            } catch(e) {
+                console.log('ランキング保存エラー:', e);
+            }
+        }
+
+        // ランキング表示
+        async function showRanking() {
+            document.getElementById('menuScreen').classList.remove('active');
+            document.getElementById('rankingScreen').classList.add('active');
+            await loadRanking(currentRankTab);
+        }
+
+        function hideRanking() {
+            document.getElementById('rankingScreen').classList.remove('active');
+            document.getElementById('menuScreen').classList.add('active');
+        }
+
+        async function switchRankTab(diff) {
+            currentRankTab = diff;
+            document.querySelectorAll('.rank-tab').forEach((t, i) => {
+                t.classList.toggle('active', ['easy','normal','hard'][i] === diff);
+            });
+            await loadRanking(diff);
+        }
+
+        async function loadRanking(diff) {
+            const list = document.getElementById('rankingList');
+            list.innerHTML = '<div class="rank-empty">読み込み中...🍬</div>';
+
+            if (!window.firebaseDB || !myUserId) {
+                list.innerHTML = '<div class="rank-empty">ランキングを表示できません</div>';
+                return;
+            }
+
+            try {
+                const { collection, getDocs, query, where } = window.firebaseModules;
+                
+                // フレンドリスト取得
+                const friendsQuery = query(collection(window.firebaseDB, 'friends'), where('userId', '==', myUserId));
+                const friendsSnapshot = await getDocs(friendsQuery);
+                const friendIds = [myUserId]; // 自分も含める
+                friendsSnapshot.forEach(doc => {
+                    friendIds.push(doc.data().friendId);
+                });
+
+                console.log('フレンドリスト:', { myUserId, friendIds, count: friendIds.length });
+
+                if (friendIds.length === 1) {
+                    list.innerHTML = '<div class="rank-empty">まだフレンドがいません🌸<br>ライフを送り合うとフレンドになれるよ！</div>';
+                    return;
+                }
+
+                // 全ランキング取得
+                const rankingsQuery = query(collection(window.firebaseDB, 'rankings'));
+                const snapshot = await getDocs(rankingsQuery);
+                
+                const entries = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // フレンド＆該当難易度のみ
+                    if (data.difficulty === diff && friendIds.includes(data.userId)) {
+                        entries.push(data);
+                    }
+                });
+
+                console.log('ランキングエントリ:', { diff, totalEntries: entries.length, entries });
+
+                if (entries.length === 0) {
+                    list.innerHTML = '<div class="rank-empty">まだ記録がありません🌸<br>プレイして記録を残そう！</div>';
+                    return;
+                }
+
+                // スコア降順ソート・上位20件
+                entries.sort((a, b) => b.score - a.score);
+                const top = entries.slice(0, 20);
+                const medals = ['🥇','🥈','🥉'];
+                const medalClass = ['gold','silver','bronze'];
+
+                list.innerHTML = top.map((entry, i) => {
+                    const isMe = entry.userId === myUserId;
+                    const numHtml = i < 3
+                        ? `<div class="rank-num ${medalClass[i]}">${medals[i]}</div>`
+                        : `<div class="rank-num">${i + 1}</div>`;
+                    const avatarHtml = entry.picture
+                        ? `<div class="rank-avatar"><img src="${entry.picture}" onerror="this.parentNode.innerHTML='🎮'"></div>`
+                        : `<div class="rank-avatar">🎮</div>`;
+                    return `
+                        <div class="rank-item ${isMe ? 'me' : ''}">
+                            ${numHtml}
+                            ${avatarHtml}
+                            <div class="rank-info">
+                                <div class="rank-name">${entry.name}${isMe ? ' 👈 あなた' : ''}</div>
+                            </div>
+                            <div class="rank-score">${entry.score.toLocaleString()} pt</div>
+                        </div>`;
+                }).join('');
+
+            } catch(e) {
+                list.innerHTML = '<div class="rank-empty">読み込みに失敗しました😢<br>' + e.message + '</div>';
+                console.log('ランキング読み込みエラー:', e);
+            }
+        }
+        async function shareScore() {
+            if (typeof liff === 'undefined' || !liffReady) {
+                alert(`スコア: ${score.toLocaleString()}点！友だちに教えてね🎉`);
+                return;
+            }
+
+            if (!liff.isInClient()) {
+                alert('LINEアプリ内でのみシェアできます');
+                return;
+            }
+
+            const diffLabel = { easy:'🌸 かんたん', normal:'💜 ふつう', hard:'🩵 むずかしい' }[difficulty] || '';
+            const diffColor = { easy:'#ec4899', normal:'#a855f7', hard:'#0ea5e9' }[difficulty] || '#a855f7';
+            const bgColor   = { easy:'#fce7f3', normal:'#f3e8ff', hard:'#e0f2fe' }[difficulty] || '#f3e8ff';
+
+            const flexMessage = {
+                type: 'flex',
+                altText: `🍬 ブロックドロップで ${score.toLocaleString()} pt 取ったよ！あなたは勝てる？`,
+                contents: {
+                    type: 'bubble',
+                    size: 'mega',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: '✦ PUZZLE GAME ✦', size: 'xs', color: '#ffffff99', align: 'center' },
+                            { type: 'text', text: 'ブロック🍬ドロップ', size: 'xl', color: '#ffffff', align: 'center', weight: 'bold', margin: 'sm' }
+                        ],
+                        backgroundColor: diffColor,
+                        paddingAll: '16px'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [
+                                    { type: 'text', text: 'SCORE', size: 'sm', color: '#aaaaaa', align: 'center' },
+                                    { type: 'text', text: `${score.toLocaleString()} pt`, size: 'xxl', color: diffColor, align: 'center', weight: 'bold', margin: 'xs' }
+                                ],
+                                backgroundColor: bgColor,
+                                cornerRadius: '16px',
+                                paddingAll: '16px'
+                            },
+                            {
+                                type: 'box',
+                                layout: 'horizontal',
+                                contents: [
+                                    {
+                                        type: 'box', layout: 'vertical', flex: 1,
+                                        contents: [
+                                            { type: 'text', text: '難易度', size: 'xs', color: '#aaaaaa', align: 'center' },
+                                            { type: 'text', text: diffLabel, size: 'sm', color: '#333333', align: 'center', weight: 'bold' }
+                                        ]
+                                    },
+                                    { type: 'separator' },
+                                    {
+                                        type: 'box', layout: 'vertical', flex: 1,
+                                        contents: [
+                                            { type: 'text', text: 'レベル', size: 'xs', color: '#aaaaaa', align: 'center' },
+                                            { type: 'text', text: `${level}`, size: 'sm', color: '#333333', align: 'center', weight: 'bold' }
+                                        ]
+                                    }
+                                ],
+                                margin: 'md', paddingAll: '8px'
+                            },
+                            { type: 'text', text: 'あなたは勝てる？✨', size: 'sm', color: diffColor, align: 'center', weight: 'bold', margin: 'md' }
+                        ],
+                        paddingAll: '16px'
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: '🍬 タップして挑戦！', size: 'sm', color: '#ffffff', align: 'center', weight: 'bold' }
+                        ],
+                        backgroundColor: diffColor,
+                        paddingAll: '12px',
+                        action: {
+                            type: 'uri',
+                            label: 'タップして挑戦！',
+                            uri: `https://liff.line.me/${LIFF_ID}?action=shareReceived&from=${myUserId}`
+                        }
+                    }
+                }
+            };
+
+            try {
+                const result = await liff.shareTargetPicker([flexMessage]);
+                if (result) console.log('シェア成功:', result.status);
+            } catch(e) {
+                console.log('シェアエラー:', e.code, e.message);
+                alert(`エラー: ${e.message}`);
+            }
+        }
+
+        // かわいいシェア画像を生成
+        function generateShareImage() {
+            const sc = document.getElementById('shareCanvas');
+            const sCtx = sc.getContext('2d');
+            const W = 600, H = 600;
+            sc.width = W;
+            sc.height = H;
+
+            // 背景グラデーション
+            const bg = sCtx.createLinearGradient(0, 0, W, H);
+            bg.addColorStop(0, '#ffeef8');
+            bg.addColorStop(0.5, '#f0e6ff');
+            bg.addColorStop(1, '#e6f0ff');
+            sCtx.fillStyle = bg;
+            sCtx.fillRect(0, 0, W, H);
+
+            // デコ丸（背景の水玉）
+            const dots = [
+                {x:60,  y:60,  r:50, c:'rgba(255,182,193,0.3)'},
+                {x:540, y:80,  r:70, c:'rgba(200,180,255,0.3)'},
+                {x:80,  y:520, r:60, c:'rgba(180,230,255,0.3)'},
+                {x:520, y:510, r:55, c:'rgba(255,220,180,0.3)'},
+                {x:300, y:40,  r:35, c:'rgba(255,200,220,0.25)'},
+                {x:300, y:560, r:40, c:'rgba(200,255,220,0.25)'},
+            ];
+            dots.forEach(d => {
+                sCtx.beginPath();
+                sCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+                sCtx.fillStyle = d.c;
+                sCtx.fill();
+            });
+
+            // キラキラ装飾
+            drawSparkles(sCtx, W, H);
+
+            // カード本体（白・角丸）
+            sCtx.fillStyle = 'rgba(255,255,255,0.85)';
+            roundRectPath(sCtx, 60, 100, W - 120, H - 200, 30);
+            sCtx.fill();
+
+            // カード枠
+            const border = sCtx.createLinearGradient(60, 100, W - 60, H - 100);
+            border.addColorStop(0, '#f9a8d4');
+            border.addColorStop(0.5, '#c084fc');
+            border.addColorStop(1, '#93c5fd');
+            sCtx.strokeStyle = border;
+            sCtx.lineWidth = 4;
+            roundRectPath(sCtx, 60, 100, W - 120, H - 200, 30);
+            sCtx.stroke();
+
+            // タイトル
+            sCtx.textAlign = 'center';
+            sCtx.fillStyle = '#9333ea';
+            sCtx.font = 'bold 36px sans-serif';
+            sCtx.fillText('🎮 ブロック積み上げ', W / 2, 175);
+
+            // 難易度バッジ
+            const diffLabel = { easy:'🌸 かんたん', normal:'🌟 ふつう', hard:'🔥 むずかしい' }[difficulty] || '';
+            const badgeBg = sCtx.createLinearGradient(W/2 - 90, 195, W/2 + 90, 235);
+            badgeBg.addColorStop(0, '#f9a8d4');
+            badgeBg.addColorStop(1, '#c084fc');
+            sCtx.fillStyle = badgeBg;
+            roundRectPath(sCtx, W/2 - 90, 198, 180, 38, 19);
+            sCtx.fill();
+            sCtx.fillStyle = 'white';
+            sCtx.font = 'bold 20px sans-serif';
+            sCtx.fillText(diffLabel, W / 2, 223);
+
+            // スコアラベル
+            sCtx.fillStyle = '#6b7280';
+            sCtx.font = '24px sans-serif';
+            sCtx.fillText('スコア', W / 2, 300);
+
+            // スコア数字（大きく）
+            sCtx.font = 'bold 110px sans-serif';
+            const scoreGrad = sCtx.createLinearGradient(W/2 - 150, 310, W/2 + 150, 410);
+            scoreGrad.addColorStop(0, '#f857a6');
+            scoreGrad.addColorStop(1, '#764ba2');
+            sCtx.fillStyle = scoreGrad;
+            sCtx.fillText(score.toLocaleString(), W / 2, 410);
+
+            // レベル表示
+            sCtx.fillStyle = '#9ca3af';
+            sCtx.font = '22px sans-serif';
+            sCtx.fillText(`レベル ${level} まで到達！`, W / 2, 455);
+
+            // 挑戦メッセージ
+            sCtx.font = 'bold 22px sans-serif';
+            sCtx.fillStyle = '#ec4899';
+            sCtx.fillText('あなたは勝てる？✨', W / 2, 510);
+
+            // 底部デコ
+            sCtx.font = '18px sans-serif';
+            sCtx.fillStyle = '#c084fc';
+            sCtx.fillText('🍬 ブロック積み上げゲーム', W / 2, 565);
+
+            return sc.toDataURL('image/png');
+        }
+
+        // キラキラ描画
+        function drawSparkles(ctx, W, H) {
+            const stars = [
+                {x:120, y:160, s:18},
+                {x:480, y:150, s:14},
+                {x:100, y:450, s:16},
+                {x:500, y:440, s:12},
+                {x:300, y:90,  s:10},
+                {x:200, y:530, s:12},
+                {x:420, y:535, s:10},
+            ];
+            stars.forEach(st => {
+                ctx.save();
+                ctx.translate(st.x, st.y);
+                ctx.fillStyle = 'rgba(248,87,166,0.55)';
+                for (let i = 0; i < 4; i++) {
+                    ctx.rotate(Math.PI / 4);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, st.s, st.s / 4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
+        }
+
+        // 角丸パスのみ
+        function roundRectPath(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        // メニューに戻る
+        function backToMenu() {
+            clearInterval(gameInterval);
+            document.getElementById('gameOverScreen').classList.remove('active');
+            document.getElementById('newRecord').classList.remove('show');
+            document.getElementById('menuScreen').classList.add('active');
+            document.getElementById('gameScreen').classList.remove('active');
+            loadBestScores();
+        }
+
+        // キーボード操作（デバッグ用）
+        document.addEventListener('keydown', (e) => {
+            if (!currentPiece) return;
+            
+            switch(e.key) {
+                case 'ArrowLeft':
+                    moveLeft();
+                    break;
+                case 'ArrowRight':
+                    moveRight();
+                    break;
+                case 'ArrowDown':
+                    moveDown();
+                    break;
+                case 'ArrowUp':
+                    rotateBlock();
+                    break;
+                case ' ':
+                    dropBlock();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                stopMove();
+            }
+        });
+
+        // タッチ操作のイベントリスナー
+        document.getElementById('btnLeft').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            moveLeft();
+        });
+        document.getElementById('btnLeft').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopMove();
+        });
+
+        document.getElementById('btnRight').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            moveRight();
+        });
+        document.getElementById('btnRight').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopMove();
+        });
+
+        document.getElementById('btnRotate').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            rotateBlock();
+        });
+
+        document.getElementById('btnDrop').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            dropBlock();
+        });
+
+        // クリック操作（PC/デバッグ用）
+        document.getElementById('btnLeft').addEventListener('click', moveLeft);
+        document.getElementById('btnRight').addEventListener('click', moveRight);
+        document.getElementById('btnRotate').addEventListener('click', rotateBlock);
+        document.getElementById('btnDrop').addEventListener('click', dropBlock);
+    </script>
+</body>
+</html>
